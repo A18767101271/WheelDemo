@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.text.TextPaint;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
@@ -40,13 +39,23 @@ public class WheelView extends LinearLayout {
     //检测手势的工具，可以获取手势的速度
     private VelocityTracker mVelocityTracker;
 
-    private TextPaint mTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-    private Paint mDivderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Paint mDividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private int mMinY, mMaxY; //滑动的最小y值和最大y值
     private int initNeedScrollY; //初始时需要滑动的距离，这是中间的
     private float mLastY; //上一次的y坐标
     private int mCurrPosY; //当前的pos位置
+
+    //默认的文字大小
+    private static final int DEFAULT_TEXT_SIZE = 25;
+    //最小的文字大小
+    private static final int MIN_TEXT_SIZE = 20;
+    //文字的最大透明度
+    private static final int DEFAULT_TEXT_ALPHA = 255;
+    //文字的最小透明度
+    private static final int MIN_TEXT_ALPHA = 128;
+
+    private static float coefficient = 0;
 
     private WheelListener mWheelListener;
 
@@ -115,6 +124,8 @@ public class WheelView extends LinearLayout {
         //计算minY 和 maxY的值
         mMinY = -itemHeight;
         mMaxY = (mDataList.size() - 1) * itemHeight + mMinY;
+        //系数
+        coefficient = (float) ((DEFAULT_TEXT_SIZE - MIN_TEXT_SIZE) / Math.pow(itemHeight, 2));
     }
 
 
@@ -128,8 +139,8 @@ public class WheelView extends LinearLayout {
             TextView itemView = new TextView(getContext());
             itemView.setLayoutParams(new LayoutParams(mWheelWidth, itemHeight));
             itemView.setGravity(Gravity.CENTER);
-            itemView.setTextSize(25);
-            itemView.setTextColor(Color.GREEN);
+            itemView.setTextSize(DEFAULT_TEXT_SIZE);
+            itemView.setTextColor(Color.BLACK);
             itemView.setText(content);
             addView(itemView);
         }
@@ -138,22 +149,17 @@ public class WheelView extends LinearLayout {
             @Override
             public void onGlobalLayout() {
                 getViewTreeObserver().removeOnGlobalLayoutListener(this);
-                //初始滑动的位置
+                //初始滑动的位置,这里的目的是为了居中显示
                 scrollTo(0, -initNeedScrollY);
             }
         });
     }
 
     private void initPaint() {
-        setBackgroundColor(Color.BLUE);
-        mTextPaint.setStyle(Paint.Style.FILL);
-        mTextPaint.setStrokeWidth(2);
-        mTextPaint.setTextSize(60);
-        mTextPaint.setColor(Color.BLACK);
-
-        mDivderPaint.setStyle(Paint.Style.FILL);
-        mDivderPaint.setColor(Color.RED);
-        mDivderPaint.setStrokeWidth(2);
+        setBackgroundColor(Color.WHITE);
+        mDividerPaint.setStyle(Paint.Style.FILL);
+        mDividerPaint.setColor(Color.BLACK);
+        mDividerPaint.setStrokeWidth(2);
     }
 
 
@@ -195,6 +201,11 @@ public class WheelView extends LinearLayout {
                     mVelocityTracker.recycle();
                     mVelocityTracker = null;
                 }
+
+                int position = mCurrPosY + 1;
+                if (mWheelListener != null) {
+                    mWheelListener.onPositionChanging(position);
+                }
                 break;
             case MotionEvent.ACTION_CANCEL:
                 if (!mScroller.isFinished()) {
@@ -220,7 +231,6 @@ public class WheelView extends LinearLayout {
             //继续调用computeScroll方法
             postInvalidate();
         }
-
     }
 
     @Override
@@ -237,14 +247,6 @@ public class WheelView extends LinearLayout {
         }
         //设置为整数
         mCurrPosY = scrollToPosY(y); //这是滑动的点 比如 -3,-2,-1, 0,1, 2, 3, 4...
-
-
-//        int position = mCurrPosY + 1;
-//        if (mWheelListener != null) {
-//
-//            mWheelListener.onPositionChanging(position);
-//        }
-
     }
 
     //scrollTo方法中调用 调整位置
@@ -264,7 +266,7 @@ public class WheelView extends LinearLayout {
         int scrollY = getScrollY();
         int currentY = mCurrPosY * itemHeight;
         int dy = currentY - scrollY;
-        if (Math.abs(dy) > 0 && Math.abs(dy) < itemHeight / 2) {
+        if (Math.abs(dy) > 0 && Math.abs(dy) < 0.5 * itemHeight) {
             //渐变回弹
             mScroller.startScroll(0, getScrollY(), 0, dy, 500);
             invalidate();
@@ -272,7 +274,53 @@ public class WheelView extends LinearLayout {
             //立刻回弹
             scrollBy(0, dy);
         }
+    }
 
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        for (int i = 0; i < this.getChildCount(); i++) {
+            TextView childItem = (TextView) getChildAt(i);
+            //这个最好画图
+            double dy = getScrollY() + itemHeight - i * itemHeight;
+            //设置子图大小
+            float textSize = calculateTextSize(dy);
+            childItem.setTextSize(textSize);
+            //设置透明度
+            float alpha = calculateTextAlpha(dy);
+            childItem.setAlpha(alpha);
+        }
+    }
+
+    /**
+     * 计算文字字体大小 停止滑动时,选中的字体最大,距离选中字体的中心位置越近,字体越大,
+     * 边界是 -itemHeight 到 itemHeight,超出这个边界,字体大小都是MIN_TEXT_SIZE
+     * 计算公式 textSize = -coefficient*Math.pow(distance,2)+DEFAULT_TEXT_SIZE
+     *
+     * @param distance
+     * @return
+     */
+    private float calculateTextSize(double distance) {
+        float size = MIN_TEXT_SIZE;
+        if (Math.abs(distance) < itemHeight) {
+            size = (float) (-coefficient * Math.pow(distance, 2) + DEFAULT_TEXT_SIZE);
+        }
+        return size;
+    }
+
+    /**
+     * 计算文字的透明度,停止滑动时,选中的字体透明度最高,距离选中字体的中心位置越近,透明度越高,
+     * 边界是 -itemHeight 到 itemHeight,超出这个边界,透明度都是MIN_TEXT_ALPHA
+     *
+     * @param distance
+     * @return
+     */
+    private float calculateTextAlpha(double distance) {
+        float alpha = MIN_TEXT_ALPHA;
+        if (Math.abs(distance) < itemHeight) {
+            alpha = (float) ((MIN_TEXT_ALPHA - DEFAULT_TEXT_ALPHA) * distance / itemHeight + DEFAULT_TEXT_ALPHA);
+        }
+        return alpha;
     }
 
     @Override
@@ -284,13 +332,12 @@ public class WheelView extends LinearLayout {
     //绘制线条
     private void drawDivider(Canvas canvas) {
 
-        int scrollY = getScrollY();
-
         canvas.save();
+        int scrollY = getScrollY();
         canvas.translate(0, scrollY);
 
-        canvas.drawLine(0, itemHeight, mWheelWidth, itemHeight, mDivderPaint);
-        canvas.drawLine(0, itemHeight * 2, mWheelWidth, itemHeight * 2, mDivderPaint);
+        canvas.drawLine(0, itemHeight, mWheelWidth, itemHeight, mDividerPaint);
+        canvas.drawLine(0, itemHeight * 2, mWheelWidth, itemHeight * 2, mDividerPaint);
 
         canvas.restore();
     }
