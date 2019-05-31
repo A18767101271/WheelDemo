@@ -314,6 +314,56 @@ public class WheelView extends LinearLayout {
         drawEdgeEffect(canvas);
     }
 
+    /**
+     * 计算文字字体大小 停止滑动时,选中的字体最大,距离选中字体的中心位置越近,字体越大,
+     * 边界是 -itemHeight 到 itemHeight,超出这个边界,字体大小都是MIN_TEXT_SIZE
+     * 计算公式 textSize = -mTextSizeCoeff*Math.pow(distance,2)+DEFAULT_TEXT_SIZE
+     *
+     * @param distance
+     * @return
+     */
+    private float calculateTextSize(double distance) {
+        float size = MIN_TEXT_SIZE;
+        if (Math.abs(distance) < itemHeight) {
+            size = (float) (-mTextSizeCoeff * Math.pow(distance, 2) + DEFAULT_TEXT_SIZE);
+        }
+        return size;
+    }
+
+    /**
+     * 计算文字的透明度,停止滑动时,选中的字体透明度最高,距离选中字体的中心位置越近,透明度越高,
+     * 边界是 -itemHeight 到 itemHeight,超出这个边界,透明度都是MIN_TEXT_ALPHA
+     *
+     * @param distance
+     * @return
+     */
+    private float calculateTextAlpha(double distance) {
+        float alpha = MIN_TEXT_ALPHA;
+        if (Math.abs(distance) < itemHeight) {
+            alpha = (float) ((MIN_TEXT_ALPHA - DEFAULT_TEXT_ALPHA) * distance / itemHeight + DEFAULT_TEXT_ALPHA);
+        }
+        return alpha;
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) { //绘制顺序 onDraw -> dispatchDraw, 防止分割线被被覆盖
+        super.dispatchDraw(canvas);
+        drawDivider(canvas);
+    }
+
+    //绘制线条
+    private void drawDivider(Canvas canvas) {
+
+        canvas.save();
+        int scrollY = getScrollY();
+        canvas.translate(0, scrollY);
+
+        canvas.drawLine(0, itemHeight, mWheelWidth, itemHeight, mDividerPaint);
+        canvas.drawLine(0, itemHeight * 2, mWheelWidth, itemHeight * 2, mDividerPaint);
+
+        canvas.restore();
+    }
+
     //初始化边缘效果
     private void initEdgeEffect() {
         if (getOverScrollMode() != OVER_SCROLL_NEVER) {
@@ -410,57 +460,6 @@ public class WheelView extends LinearLayout {
             }
         }
     }
-
-    /**
-     * 计算文字字体大小 停止滑动时,选中的字体最大,距离选中字体的中心位置越近,字体越大,
-     * 边界是 -itemHeight 到 itemHeight,超出这个边界,字体大小都是MIN_TEXT_SIZE
-     * 计算公式 textSize = -mTextSizeCoeff*Math.pow(distance,2)+DEFAULT_TEXT_SIZE
-     *
-     * @param distance
-     * @return
-     */
-    private float calculateTextSize(double distance) {
-        float size = MIN_TEXT_SIZE;
-        if (Math.abs(distance) < itemHeight) {
-            size = (float) (-mTextSizeCoeff * Math.pow(distance, 2) + DEFAULT_TEXT_SIZE);
-        }
-        return size;
-    }
-
-    /**
-     * 计算文字的透明度,停止滑动时,选中的字体透明度最高,距离选中字体的中心位置越近,透明度越高,
-     * 边界是 -itemHeight 到 itemHeight,超出这个边界,透明度都是MIN_TEXT_ALPHA
-     *
-     * @param distance
-     * @return
-     */
-    private float calculateTextAlpha(double distance) {
-        float alpha = MIN_TEXT_ALPHA;
-        if (Math.abs(distance) < itemHeight) {
-            alpha = (float) ((MIN_TEXT_ALPHA - DEFAULT_TEXT_ALPHA) * distance / itemHeight + DEFAULT_TEXT_ALPHA);
-        }
-        return alpha;
-    }
-
-    @Override
-    protected void dispatchDraw(Canvas canvas) { //绘制顺序 onDraw -> dispatchDraw, 防止分割线被被覆盖
-        super.dispatchDraw(canvas);
-        drawDivider(canvas);
-    }
-
-    //绘制线条
-    private void drawDivider(Canvas canvas) {
-
-        canvas.save();
-        int scrollY = getScrollY();
-        canvas.translate(0, scrollY);
-
-        canvas.drawLine(0, itemHeight, mWheelWidth, itemHeight, mDividerPaint);
-        canvas.drawLine(0, itemHeight * 2, mWheelWidth, itemHeight * 2, mDividerPaint);
-
-        canvas.restore();
-    }
-
 
     public void setSelectedPos(int pos) {
 
