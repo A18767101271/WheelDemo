@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
@@ -11,6 +12,7 @@ import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.ViewConfiguration;
 import android.view.ViewTreeObserver;
+import android.widget.EdgeEffect;
 import android.widget.LinearLayout;
 import android.widget.Scroller;
 import android.widget.TextView;
@@ -22,9 +24,7 @@ public class WheelView extends LinearLayout {
 
     private Scroller mScroller;
 
-
     private int visibleItems = 3; //可见的item数量
-
     private int itemHeight = 100;//每个item的高度
 
     private List<String> mDataList = new ArrayList<>();
@@ -54,8 +54,17 @@ public class WheelView extends LinearLayout {
     private static final int DEFAULT_TEXT_ALPHA = 255;
     //文字的最小透明度
     private static final int MIN_TEXT_ALPHA = 128;
+    //文字缩放系数
+    private static float mTextSizeCoeff = 1;
 
-    private static float coefficient = 0;
+    //起始边缘
+    private EdgeEffect mStartEdgeEffect;
+    //末尾边缘
+    private EdgeEffect mEndEdgeEffect;
+    //边缘阴影的宽度
+    private static final int EDGE_EFFECT_WIDTH = 15;
+    //边缘阴影的颜色
+    private static final int EDGE_COLOR = Color.BLUE;
 
     private WheelListener mWheelListener;
 
@@ -123,11 +132,15 @@ public class WheelView extends LinearLayout {
         // ...
         //计算minY 和 maxY的值
         mMinY = -itemHeight;
-        mMaxY = (mDataList.size() - 1) * itemHeight + mMinY;
-        //系数
-        coefficient = (float) ((DEFAULT_TEXT_SIZE - MIN_TEXT_SIZE) / Math.pow(itemHeight, 2));
-    }
+        if (mDataList.size() == 2) {
+            mMaxY = 0;
+        } else {
+            mMaxY = (mDataList.size() - 1) * itemHeight + mMinY;
+        }
 
+        //文字大小系数
+        mTextSizeCoeff = (float) ((DEFAULT_TEXT_SIZE - MIN_TEXT_SIZE) / Math.pow(itemHeight, 2));
+    }
 
     private void initLayoutParam() {
         setOrientation(LinearLayout.VERTICAL);
@@ -162,6 +175,7 @@ public class WheelView extends LinearLayout {
         mDividerPaint.setStrokeWidth(2);
     }
 
+    private float mDeltaY;
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
@@ -180,9 +194,10 @@ public class WheelView extends LinearLayout {
                 mLastY = currY;
                 break;
             case MotionEvent.ACTION_MOVE:
-                float deltaY = -(currY - mLastY);
-                scrollBy(0, (int) deltaY);
+                mDeltaY = -(currY - mLastY);
+                scrollBy(0, (int) mDeltaY);
                 mLastY = currY;
+                initEdgeEffect();
                 break;
 
             case MotionEvent.ACTION_UP:
@@ -201,6 +216,7 @@ public class WheelView extends LinearLayout {
                     mVelocityTracker.recycle();
                     mVelocityTracker = null;
                 }
+                releaseEdgeEffect();
 
                 int position = mCurrPosY + 1;
                 if (mWheelListener != null) {
@@ -215,6 +231,7 @@ public class WheelView extends LinearLayout {
                     mVelocityTracker.recycle();
                     mVelocityTracker = null;
                 }
+                releaseEdgeEffect();
                 break;
         }
         return true;
@@ -237,9 +254,13 @@ public class WheelView extends LinearLayout {
     public void scrollTo(int x, int y) {
         if (y < mMinY) {
             y = mMinY;
+            //向上的边缘效果
+            turnOnStartEdgeEffect();
         }
         if (y > mMaxY) {
             y = mMaxY;
+            //向下的边缘效果
+            turnOnEndEdgeEffect();
         }
 
         if (getScrollY() != y) {
@@ -251,7 +272,6 @@ public class WheelView extends LinearLayout {
 
     //scrollTo方法中调用 调整位置
     private int scrollToPosY(int y) {
-
         int currPosY = y / itemHeight;
         if (y % itemHeight != 0) {
             if (Math.abs(y) > currPosY * itemHeight + 0.5 * itemHeight) {
@@ -266,7 +286,7 @@ public class WheelView extends LinearLayout {
         int scrollY = getScrollY();
         int currentY = mCurrPosY * itemHeight;
         int dy = currentY - scrollY;
-        if (Math.abs(dy) > 0 && Math.abs(dy) < 0.5 * itemHeight) {
+        if (Math.abs(dy) > 1) {
             //渐变回弹
             mScroller.startScroll(0, getScrollY(), 0, dy, 500);
             invalidate();
@@ -290,12 +310,111 @@ public class WheelView extends LinearLayout {
             float alpha = calculateTextAlpha(dy);
             childItem.setAlpha(alpha);
         }
+
+        drawEdgeEffect(canvas);
+    }
+
+    //初始化边缘效果
+    private void initEdgeEffect() {
+        if (getOverScrollMode() != OVER_SCROLL_NEVER) {
+            if (mStartEdgeEffect == null) {
+                mStartEdgeEffect = new EdgeEffect(getContext());
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    mStartEdgeEffect.setColor(EDGE_COLOR);
+                }
+            }
+
+            if (mEndEdgeEffect == null) {
+                mEndEdgeEffect = new EdgeEffect(getContext());
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    mEndEdgeEffect.setColor(EDGE_COLOR);
+                }
+            }
+        } else {
+            mStartEdgeEffect = null;
+            mEndEdgeEffect = null;
+        }
+    }
+
+    //释放边缘效果
+    private void releaseEdgeEffect() {
+        if (mStartEdgeEffect != null) {
+            mStartEdgeEffect.onRelease();
+        }
+        if (mEndEdgeEffect != null) {
+            mEndEdgeEffect.onRelease();
+        }
+    }
+
+    //启动边缘开始的效果
+    private void turnOnStartEdgeEffect() {
+        if (!mScroller.isFinished()) {
+            if (mStartEdgeEffect != null) {
+                mStartEdgeEffect.onAbsorb((int) mScroller.getCurrVelocity());
+            }
+            mScroller.abortAnimation();
+        } else {
+            if (mStartEdgeEffect != null) {
+                //偏移量
+                float deltaDistance = Math.abs(mDeltaY) / (visibleItems * itemHeight);
+                mStartEdgeEffect.onPull(deltaDistance);
+                mStartEdgeEffect.setSize(getWidth(), getHeight());
+            }
+        }
+    }
+
+    //启动边缘结束的效果
+    private void turnOnEndEdgeEffect() {
+        if (!mScroller.isFinished()) {
+            if (mEndEdgeEffect != null) {
+                mEndEdgeEffect.onAbsorb((int) mScroller.getCurrVelocity());
+            }
+            mScroller.abortAnimation();
+        } else {
+            if (mEndEdgeEffect != null) {
+                //偏移量
+                float deltaDistance = Math.abs(mDeltaY) / (visibleItems * itemHeight);
+                mEndEdgeEffect.onPull(deltaDistance);
+                mEndEdgeEffect.setSize(getWidth(), getHeight());
+            }
+        }
+    }
+
+    //绘制边缘效果
+    private void drawEdgeEffect(Canvas canvas) {
+        if (mStartEdgeEffect != null) {
+            if (!mStartEdgeEffect.isFinished()) {
+                int restoreCount = canvas.save();
+                canvas.translate(0, mMinY);
+                if (mStartEdgeEffect.draw(canvas)) {
+                    postInvalidateOnAnimation();
+                }
+                canvas.restoreToCount(restoreCount);
+            } else {
+                mStartEdgeEffect.finish();
+            }
+        }
+
+        if (mEndEdgeEffect != null) {
+            if (!mEndEdgeEffect.isFinished()) {
+                int restoreCount = canvas.save();
+                canvas.rotate(180);
+                float dy = mMinY - mDataList.size() * itemHeight;
+                canvas.translate(-getWidth(), dy);
+                if (mEndEdgeEffect.draw(canvas)) {
+                    postInvalidateOnAnimation();
+                }
+                canvas.restoreToCount(restoreCount);
+            } else {
+                mEndEdgeEffect.finish();
+            }
+        }
     }
 
     /**
      * 计算文字字体大小 停止滑动时,选中的字体最大,距离选中字体的中心位置越近,字体越大,
      * 边界是 -itemHeight 到 itemHeight,超出这个边界,字体大小都是MIN_TEXT_SIZE
-     * 计算公式 textSize = -coefficient*Math.pow(distance,2)+DEFAULT_TEXT_SIZE
+     * 计算公式 textSize = -mTextSizeCoeff*Math.pow(distance,2)+DEFAULT_TEXT_SIZE
      *
      * @param distance
      * @return
@@ -303,7 +422,7 @@ public class WheelView extends LinearLayout {
     private float calculateTextSize(double distance) {
         float size = MIN_TEXT_SIZE;
         if (Math.abs(distance) < itemHeight) {
-            size = (float) (-coefficient * Math.pow(distance, 2) + DEFAULT_TEXT_SIZE);
+            size = (float) (-mTextSizeCoeff * Math.pow(distance, 2) + DEFAULT_TEXT_SIZE);
         }
         return size;
     }
